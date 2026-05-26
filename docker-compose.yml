@@ -52,6 +52,7 @@ services:
     volumes:
       - static_files:/app/staticfiles
       - app_logs:/app/logs
+      - ssh_keys:/app/keys:ro
     networks:
       - backend
       - frontend
@@ -84,6 +85,7 @@ services:
       start_period: 30s
     volumes:
       - app_logs:/app/logs
+      - ssh_keys:/app/keys:ro
     networks:
       - backend
 
@@ -171,6 +173,12 @@ volumes:
   redisdata:
   static_files:
   app_logs:
+  ssh_keys:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/sshvpn/keys
   certbot_www:
   certbot_conf:
 
