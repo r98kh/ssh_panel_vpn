@@ -129,30 +129,30 @@ class SSHManager:
         return CommandResult(exit_code=0, stdout="", stderr="")
 
     def _ensure_maxlogin_script(self) -> None:
-        """Install a PAM script that enforces max logins on SSH connect."""
-        check = self.run("test -f /etc/ssh/check_maxlogins.sh && echo exists")
-        if "exists" in check.stdout:
-            return
-        self.run(
-            "printf '%s\\n' "
-            "'#!/bin/bash' "
-            "'USER=\"$PAM_USER\"' "
-            "'[ -z \"$USER\" ] && exit 0' "
-            "'[ $(id -u \"$USER\" 2>/dev/null || echo 0) -lt 1000 ] && exit 0' "
-            "'MAX=$(grep \"^$USER\" /etc/security/limits.conf 2>/dev/null | awk \"/maxlogins/{print \\$4}\")' "
-            "'[ -z \"$MAX\" ] && exit 0' "
-            "'CURRENT=$(pgrep -cu \"$USER\" sshd 2>/dev/null || echo 0)' "
-            "'if [ \"$CURRENT\" -gt \"$MAX\" ]; then' "
-            "'  logger \"sshvpn: rejected $USER (sessions=$CURRENT, max=$MAX)\"' "
-            "'  exit 1' "
-            "'fi' "
-            "'exit 0' "
-            "> /etc/ssh/check_maxlogins.sh"
+        """Install a PAM script that enforces max concurrent SSH logins."""
+        import base64
+        script = (
+            "#!/bin/bash\n"
+            "USER=\"${PAM_USER:-}\"\n"
+            "[ -z \"$USER\" ] && exit 0\n"
+            "UID_NUM=$(id -u \"$USER\" 2>/dev/null) || exit 0\n"
+            "[ \"$UID_NUM\" -lt 1000 ] && exit 0\n"
+            "MAX=$(awk -v u=\"$USER\" '$1==u && /maxlogins/{print $4}' /etc/security/limits.conf 2>/dev/null)\n"
+            "[ -z \"$MAX\" ] && exit 0\n"
+            "[ \"$MAX\" = \"0\" ] && exit 0\n"
+            "CURRENT=$(pgrep -cu \"$USER\" sshd 2>/dev/null) || exit 0\n"
+            "[ \"$CURRENT\" -gt \"$MAX\" ] && exit 1\n"
+            "exit 0\n"
         )
+        b64 = base64.b64encode(script.encode()).decode()
+        check = self.run("test -f /etc/ssh/check_maxlogins.sh && grep -q 'pgrep.*sshd' /etc/ssh/check_maxlogins.sh && echo ok")
+        if "ok" in check.stdout:
+            return
+        self.run(f"echo '{b64}' | base64 -d > /etc/ssh/check_maxlogins.sh")
         self.run("chmod +x /etc/ssh/check_maxlogins.sh")
         self.run(
             "grep -q 'check_maxlogins' /etc/pam.d/sshd || "
-            "sed -i '1a auth required pam_exec.so quiet /etc/ssh/check_maxlogins.sh' /etc/pam.d/sshd"
+            "sed -i '/^@include common-auth/i auth required pam_exec.so quiet /etc/ssh/check_maxlogins.sh' /etc/pam.d/sshd"
         )
 
     def setup_traffic_accounting(self, username: str) -> None:
