@@ -39,7 +39,9 @@ export default function AccountDetailPage() {
     (l: AuditLog) => l.account_username === a.username,
   );
 
-  const sshUri = `ssh://${a.username}@${a.server_ip}:${a.server_ssh_port}`;
+  const sshUri = a.password_display
+    ? `ssh://${a.username}:${a.password_display}@${a.server_ip}:${a.server_ssh_port}#${a.username}`
+    : `ssh://${a.username}@${a.server_ip}:${a.server_ssh_port}#${a.username}`;
   const statusUrl = `${window.location.origin}/status/${a.access_token}`;
   const sshConfig = `Host vpn-${a.username}\n    HostName ${a.server_ip}\n    Port ${a.server_ssh_port}\n    User ${a.username}`;
 

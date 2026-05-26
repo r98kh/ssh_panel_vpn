@@ -17,7 +17,7 @@ def generate_credentials_qr(
     Generate a base64-encoded PNG QR code containing SSH credentials.
     Returns a data-URI string suitable for embedding in HTML/Telegram.
     """
-    text = f"ssh://{username}:{password}@{host}:{port}"
+    text = f"ssh://{username}:{password}@{host}:{port}#{username}"
     img = qrcode.make(text, box_size=6, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
