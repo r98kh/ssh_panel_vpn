@@ -130,26 +130,30 @@ class SSHManager:
 
     def _ensure_maxlogin_script(self) -> None:
         """Install a PAM script that enforces max logins on SSH connect."""
-        script = r'''#!/bin/bash
-USER="$PAM_USER"
-[ -z "$USER" ] && exit 0
-MAX=$(grep "^$USER" /etc/security/limits.conf 2>/dev/null | awk '/maxlogins/{print $4}')
-[ -z "$MAX" ] && exit 0
-CURRENT=$(ps -u "$USER" -o pid= 2>/dev/null | grep -c "sshd" 2>/dev/null || pgrep -cu "$USER" sshd 2>/dev/null || echo 0)
-CURRENT=$(pgrep -c -u "$USER" sshd 2>/dev/null || echo 0)
-if [ "$CURRENT" -gt "$MAX" ]; then
-    exit 1
-fi
-exit 0
-'''
         check = self.run("test -f /etc/ssh/check_maxlogins.sh && echo exists")
-        if "exists" not in check.stdout:
-            self.run(f"cat > /etc/ssh/check_maxlogins.sh << 'SCRIPT'\n{script}\nSCRIPT")
-            self.run("chmod +x /etc/ssh/check_maxlogins.sh")
-            self.run(
-                "grep -q 'check_maxlogins' /etc/pam.d/sshd || "
-                "echo 'session    required    pam_exec.so /etc/ssh/check_maxlogins.sh' >> /etc/pam.d/sshd"
-            )
+        if "exists" in check.stdout:
+            return
+        self.run(
+            "printf '%s\\n' "
+            "'#!/bin/bash' "
+            "'USER=\"$PAM_USER\"' "
+            "'[ -z \"$USER\" ] && exit 0' "
+            "'[ $(id -u \"$USER\" 2>/dev/null || echo 0) -lt 1000 ] && exit 0' "
+            "'MAX=$(grep \"^$USER\" /etc/security/limits.conf 2>/dev/null | awk \"/maxlogins/{print \\$4}\")' "
+            "'[ -z \"$MAX\" ] && exit 0' "
+            "'CURRENT=$(pgrep -cu \"$USER\" sshd 2>/dev/null || echo 0)' "
+            "'if [ \"$CURRENT\" -ge \"$MAX\" ]; then' "
+            "'  logger \"sshvpn: rejected $USER (sessions=$CURRENT, max=$MAX)\"' "
+            "'  exit 1' "
+            "'fi' "
+            "'exit 0' "
+            "> /etc/ssh/check_maxlogins.sh"
+        )
+        self.run("chmod +x /etc/ssh/check_maxlogins.sh")
+        self.run(
+            "grep -q 'check_maxlogins' /etc/pam.d/sshd || "
+            "sed -i '1a auth required pam_exec.so quiet /etc/ssh/check_maxlogins.sh' /etc/pam.d/sshd"
+        )
 
     def setup_traffic_accounting(self, username: str) -> None:
         """Set up iptables rules to track user bandwidth."""
