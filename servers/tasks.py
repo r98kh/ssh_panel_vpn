@@ -9,6 +9,8 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+_health_fail_counts: dict[int, int] = {}
+
 @shared_task(name="servers.tasks.check_all_servers_health")
 def check_all_servers_health():
     from servers.models import Server
@@ -26,11 +28,15 @@ def check_all_servers_health():
             srv.last_health_check = timezone.now()
             if srv.status == Server.Status.ACTIVE and srv.cpu_usage > 95:
                 srv.status = Server.Status.FULL
+            _health_fail_counts[srv.id] = 0
             srv.save()
         except Exception:
             logger.exception("Health check failed for %s", srv)
-            srv.status = Server.Status.DOWN
+            _health_fail_counts[srv.id] = _health_fail_counts.get(srv.id, 0) + 1
             srv.last_health_check = timezone.now()
+            if _health_fail_counts[srv.id] >= 3:
+                srv.status = Server.Status.DOWN
+                logger.warning("Server %s marked DOWN after 3 consecutive failures", srv)
             srv.save(update_fields=["status", "last_health_check"])
 
 

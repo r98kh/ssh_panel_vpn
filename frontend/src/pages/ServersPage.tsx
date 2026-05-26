@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Server as ServerIcon, Plus, RefreshCw, Trash2, Edit2 } from "lucide-react";
-import { getServers, createServer, updateServer, deleteServer, triggerHealthCheck } from "../api/endpoints";
+import { Server as ServerIcon, Plus, RefreshCw, Trash2, Edit2, Power } from "lucide-react";
+import { getServers, createServer, updateServer, deleteServer, triggerHealthCheck, setServerStatus } from "../api/endpoints";
 import type { Server } from "../lib/types";
 import { useFetch } from "../hooks/useFetch";
 import { useToast } from "../context/ToastContext";
@@ -94,8 +94,19 @@ export default function ServersPage() {
     try {
       await triggerHealthCheck(id);
       toast("info", "بررسی سلامت ارسال شد");
+      setTimeout(refetch, 3000);
     } catch {
       toast("error", "خطا");
+    }
+  };
+
+  const handleActivate = async (id: number) => {
+    try {
+      await setServerStatus(id, "active");
+      toast("success", "سرور فعال شد");
+      refetch();
+    } catch {
+      toast("error", "خطا در فعال‌سازی");
     }
   };
 
@@ -147,7 +158,12 @@ export default function ServersPage() {
                 <ProgressBar value={s.disk_usage} label="Disk" size="sm" />
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {s.status !== "active" && (
+                  <button onClick={() => handleActivate(s.id)} className="btn-primary btn-sm flex items-center gap-1 flex-1">
+                    <Power className="w-3.5 h-3.5" /> فعال‌سازی
+                  </button>
+                )}
                 <button onClick={() => handleHealthCheck(s.id)} className="btn-secondary btn-sm flex items-center gap-1 flex-1">
                   <RefreshCw className="w-3.5 h-3.5" /> بررسی
                 </button>

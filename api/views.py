@@ -67,6 +67,19 @@ def server_health_check(request, pk):
     return Response({"detail": "Health check dispatched."})
 
 
+@api_view(["POST"])
+@permission_classes([permissions.IsAdminUser])
+def server_set_status(request, pk):
+    server = get_object_or_404(Server, pk=pk)
+    new_status = request.data.get("status", "active")
+    valid = [c[0] for c in Server.Status.choices]
+    if new_status not in valid:
+        return Response({"detail": f"Invalid status. Choose from: {valid}"}, status=status.HTTP_400_BAD_REQUEST)
+    server.status = new_status
+    server.save(update_fields=["status", "updated_at"])
+    return Response({"detail": f"Server status set to {new_status}.", "status": new_status})
+
+
 # ---------------------------------------------------------------------------
 # Plan endpoints
 # ---------------------------------------------------------------------------

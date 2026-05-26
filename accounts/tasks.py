@@ -61,7 +61,7 @@ def cleanup_expired_accounts(grace_days: int = 3):
 
 @shared_task(name="accounts.tasks.sync_active_sessions")
 def sync_active_sessions():
-    """Fetch active SSH sessions from every server and store in DB."""
+    """Fetch active SSH sessions from every server, store in DB, and enforce limits."""
     from accounts.models import SSHAccount, ActiveSession
     from servers.models import Server
     from servers.ssh import get_ssh_manager
@@ -71,22 +71,36 @@ def sync_active_sessions():
         try:
             with get_ssh_manager(srv) as ssh:
                 sessions = ssh.get_active_sessions()
-            usernames = {s["user"] for s in sessions}
-            accounts = SSHAccount.objects.filter(
-                server=srv,
-                username__in=usernames,
-                status=SSHAccount.Status.ACTIVE,
-            )
-            acc_map = {a.username: a for a in accounts}
+                usernames = {s["user"] for s in sessions}
+                accounts = SSHAccount.objects.filter(
+                    server=srv,
+                    username__in=usernames,
+                    status=SSHAccount.Status.ACTIVE,
+                )
+                acc_map = {a.username: a for a in accounts}
 
-            ActiveSession.objects.filter(account__server=srv).delete()
-            for sess in sessions:
-                acc = acc_map.get(sess["user"])
-                if acc:
-                    ActiveSession.objects.create(
-                        account=acc,
-                        pid=sess["pid"],
-                        client_ip=sess.get("client_ip"),
-                    )
+                ActiveSession.objects.filter(account__server=srv).delete()
+
+                user_sessions: dict[str, list[dict]] = {}
+                for sess in sessions:
+                    acc = acc_map.get(sess["user"])
+                    if acc:
+                        ActiveSession.objects.create(
+                            account=acc,
+                            pid=sess["pid"],
+                            client_ip=sess.get("client_ip"),
+                        )
+                        user_sessions.setdefault(sess["user"], []).append(sess)
+
+                for username, sess_list in user_sessions.items():
+                    acc = acc_map.get(username)
+                    if acc and len(sess_list) > acc.max_connections:
+                        excess = sorted(sess_list, key=lambda s: s["pid"])[acc.max_connections:]
+                        pids = [str(s["pid"]) for s in excess]
+                        ssh.run(f"kill -9 {' '.join(pids)}")
+                        logger.info(
+                            "Killed %d excess sessions for %s (limit=%d, had=%d)",
+                            len(pids), username, acc.max_connections, len(sess_list),
+                        )
         except Exception:
             logger.exception("Session sync failed for %s", srv)

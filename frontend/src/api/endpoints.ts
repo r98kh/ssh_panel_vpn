@@ -39,6 +39,9 @@ export const deleteServer = (id: number) => api.delete(`/servers/${id}/`);
 export const triggerHealthCheck = (id: number) =>
   api.post(`/servers/${id}/health-check/`);
 
+export const setServerStatus = (id: number, status: string) =>
+  api.post(`/servers/${id}/set-status/`, { status });
+
 // --- Plans ---
 export const getPlans = (page = 1) =>
   api.get<PaginatedResponse<Plan>>("/plans/", { params: { page } });

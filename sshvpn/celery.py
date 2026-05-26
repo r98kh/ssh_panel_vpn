@@ -22,8 +22,8 @@ app.conf.beat_schedule = {
         "task": "servers.tasks.check_all_servers_health",
         "schedule": crontab(minute="*"),
     },
-    "sync-active-sessions-every-2-min": {
+    "sync-active-sessions-every-30-sec": {
         "task": "accounts.tasks.sync_active_sessions",
-        "schedule": crontab(minute="*/2"),
+        "schedule": 30.0,
     },
 }

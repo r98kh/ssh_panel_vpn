@@ -17,6 +17,7 @@ urlpatterns = [
     path("servers/", views.ServerListView.as_view(), name="server-list"),
     path("servers/<int:pk>/", views.ServerDetailView.as_view(), name="server-detail"),
     path("servers/<int:pk>/health-check/", views.server_health_check, name="server-health"),
+    path("servers/<int:pk>/set-status/", views.server_set_status, name="server-set-status"),
 
     # Plans
     path("plans/", views.PlanListView.as_view(), name="plan-list"),

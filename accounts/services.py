@@ -75,7 +75,7 @@ def create_account(
         if not result.ok:
             raise AccountError(f"Remote user creation failed: {result.stderr}")
         ssh.set_expiry(username, expire_date.strftime("%Y-%m-%d"))
-        ssh.set_max_logins(username, plan.max_connections)
+        ssh.set_max_logins(username, max_conn)
 
     AuditLog.objects.create(
         action=AuditLog.Action.CREATE,
