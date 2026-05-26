@@ -155,8 +155,10 @@ TELEGRAM_BOT_TOKEN = config("TELEGRAM_BOT_TOKEN", default="")
 TELEGRAM_ADMIN_CHAT_ID = config("TELEGRAM_ADMIN_CHAT_ID", default="")
 
 # --- Security hardening for production ---
+# SSL redirect is handled by nginx, not Django
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = False
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
