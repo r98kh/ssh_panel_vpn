@@ -79,7 +79,7 @@ def sync_bandwidth_usage():
                 for acc in accounts:
                     ssh.setup_traffic_accounting(acc.username)
                     bytes_used = ssh.get_user_bandwidth_bytes(acc.username)
-                    gb_used = round(bytes_used / (1024 ** 3), 3)
+                    gb_used = round(bytes_used / (1024 ** 3), 6)
                     if gb_used != acc.bandwidth_used_gb:
                         acc.bandwidth_used_gb = gb_used
                         acc.save(update_fields=["bandwidth_used_gb", "updated_at"])

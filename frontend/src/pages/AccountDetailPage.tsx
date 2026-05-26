@@ -126,7 +126,7 @@ export default function AccountDetailPage() {
               <div className="mt-4">
                 <ProgressBar
                   value={bandwidthPercent}
-                  label={`حجم مصرفی: ${a.bandwidth_used_gb.toFixed(1)} / ${a.bandwidth_limit_gb} GB`}
+                  label={`حجم مصرفی: ${a.bandwidth_used_gb < 1 ? (a.bandwidth_used_gb * 1024).toFixed(1) + ' MB' : a.bandwidth_used_gb.toFixed(2) + ' GB'} / ${a.bandwidth_limit_gb} GB`}
                 />
               </div>
             )}
