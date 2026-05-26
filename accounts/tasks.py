@@ -72,12 +72,12 @@ def sync_bandwidth_usage():
             accounts = SSHAccount.objects.filter(
                 server=srv,
                 status=SSHAccount.Status.ACTIVE,
-                bandwidth_limit_gb__gt=0,
             )
             if not accounts.exists():
                 continue
             with get_ssh_manager(srv) as ssh:
                 for acc in accounts:
+                    ssh.setup_traffic_accounting(acc.username)
                     bytes_used = ssh.get_user_bandwidth_bytes(acc.username)
                     gb_used = round(bytes_used / (1024 ** 3), 3)
                     if gb_used != acc.bandwidth_used_gb:
