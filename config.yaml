@@ -3,6 +3,6 @@ client:
   server_addr: "91.107.189.25:8443"
   server_sni: "91.107.189.25"
   ws_path: "/ws"
-  auth_token: "550e8400-e29b-41d4-a716-446655440000"
+  auth_token: "9fa1b299-e004-4026-8da8-ac3354ca5e04"
   use_tls: false
   insecure: true

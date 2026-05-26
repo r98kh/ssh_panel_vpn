@@ -88,16 +88,22 @@ func randomPadding(min, max int) ([]byte, error) {
 	return pad, err
 }
 
-// ClientHello builds the first handshake message from the client.
+// BuildClientHello builds the first handshake message from the client.
 // Format: [8-byte timestamp][32-byte client pubkey][N-byte random padding]
 func BuildClientHello(kp *KeyPair) ([]byte, error) {
+	return BuildClientHelloWithTime(kp, time.Now())
+}
+
+// BuildClientHelloWithTime builds a client hello with a specific timestamp,
+// so the caller can reuse the exact same value during ParseServerHello.
+func BuildClientHelloWithTime(kp *KeyPair, ts time.Time) ([]byte, error) {
 	pad, err := randomPadding(MinHandshakePad, MaxHandshakePad)
 	if err != nil {
 		return nil, err
 	}
 
 	msg := make([]byte, 8+X25519KeySize+len(pad))
-	binary.BigEndian.PutUint64(msg[:8], uint64(time.Now().Unix()))
+	binary.BigEndian.PutUint64(msg[:8], uint64(ts.Unix()))
 	copy(msg[8:8+X25519KeySize], kp.Public)
 	copy(msg[8+X25519KeySize:], pad)
 	return msg, nil

@@ -104,7 +104,9 @@ func (c *Client) performHandshake() (*protocol.SessionCipher, error) {
 		return nil, err
 	}
 
-	clientHello, err := protocol.BuildClientHello(kp)
+	// Capture the timestamp before building hello so we use the same value
+	ts := time.Now()
+	clientHello, err := protocol.BuildClientHelloWithTime(kp, ts)
 	if err != nil {
 		return nil, err
 	}
@@ -119,13 +121,12 @@ func (c *Client) performHandshake() (*protocol.SessionCipher, error) {
 		return nil, fmt.Errorf("failed to read server hello: %w", err)
 	}
 
-	ts := time.Now()
-	_, _, sessionKey, err := protocol.ParseServerHello(serverHelloBuf[:n], kp.Private, ts)
+	_, challenge, sessionKey, err := protocol.ParseServerHello(serverHelloBuf[:n], kp.Private, ts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse server hello: %w", err)
 	}
 
-	clientAuth, err := protocol.BuildClientAuth(serverHelloBuf[protocol.X25519KeySize:protocol.X25519KeySize+protocol.ChallengeSize], sessionKey, c.config.AuthToken)
+	clientAuth, err := protocol.BuildClientAuth(challenge, sessionKey, c.config.AuthToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build client auth: %w", err)
 	}
