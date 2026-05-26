@@ -142,7 +142,7 @@ class SSHManager:
             "'MAX=$(grep \"^$USER\" /etc/security/limits.conf 2>/dev/null | awk \"/maxlogins/{print \\$4}\")' "
             "'[ -z \"$MAX\" ] && exit 0' "
             "'CURRENT=$(pgrep -cu \"$USER\" sshd 2>/dev/null || echo 0)' "
-            "'if [ \"$CURRENT\" -ge \"$MAX\" ]; then' "
+            "'if [ \"$CURRENT\" -gt \"$MAX\" ]; then' "
             "'  logger \"sshvpn: rejected $USER (sessions=$CURRENT, max=$MAX)\"' "
             "'  exit 1' "
             "'fi' "
