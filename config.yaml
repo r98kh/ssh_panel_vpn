@@ -1,0 +1,8 @@
+client:
+  listen_addr: "127.0.0.1:1080"
+  server_addr: "91.107.189.25:8443"
+  server_sni: "91.107.189.25"
+  ws_path: "/ws"
+  auth_token: "550e8400-e29b-41d4-a716-446655440000"
+  use_tls: false
+  insecure: true
