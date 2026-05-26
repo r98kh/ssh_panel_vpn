@@ -1,0 +1,166 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-sshvpn}
+      POSTGRES_USER: ${DB_USER:-vpn}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vpn}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vpn} -d ${DB_NAME:-sshvpn}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - CREATE_SUPERUSER=true
+      - SEED_DATA=true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      - static_files:/app/staticfiles
+      - app_logs:/app/logs
+    networks:
+      - backend
+      - frontend
+
+  celery-worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - CREATE_SUPERUSER=false
+      - SEED_DATA=false
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    command: celery -A sshvpn worker -l info --concurrency=4 -E
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - backend
+
+  celery-beat:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - CREATE_SUPERUSER=false
+      - SEED_DATA=false
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    command: celery -A sshvpn beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - backend
+
+  telegram-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - CREATE_SUPERUSER=false
+      - SEED_DATA=false
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    command: python manage.py runbot
+    networks:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_files:/app/staticfiles:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
+    depends_on:
+      web:
+        condition: service_started
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  redisdata:
+  static_files:
+  app_logs:
+  certbot_www:
+  certbot_conf:
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge

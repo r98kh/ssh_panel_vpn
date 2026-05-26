@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  :root {
+    --primary: #1a73e8;
+    --secondary: #f8f9fa;
+    --accent: #34a853;
+  }
+  #header { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+  #branding h1, #branding h1 a:link, #branding h1 a:visited {
+    color: #fff !important;
+    font-weight: 700;
+  }
+  .module h2, .module caption, .inline-group h2 {
+    background: var(--primary) !important;
+  }
+  div.breadcrumbs { background: #16213e; }
+  div.breadcrumbs a { color: #90caf9; }
+</style>
+{% endblock %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'admin:index' %}">SSH VPN Panel</a></h1>
+{% endblock %}
