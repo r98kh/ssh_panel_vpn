@@ -101,8 +101,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
-    BASE_DIR / "static",
-    ("assets", BASE_DIR / "frontend" / "dist" / "assets"),
+    d for d in [
+        BASE_DIR / "static" if (BASE_DIR / "static").exists() else None,
+        ("assets", BASE_DIR / "frontend" / "dist" / "assets") if (BASE_DIR / "frontend" / "dist" / "assets").exists() else None,
+    ] if d is not None
 ]
 STORAGES = {
     "staticfiles": {
@@ -160,14 +162,16 @@ TELEGRAM_ADMIN_CHAT_ID = config("TELEGRAM_ADMIN_CHAT_ID", default="")
 
 # --- Security hardening for production ---
 # SSL redirect is handled by nginx, not Django
+USE_SSL = config("USE_SSL", default=False, cast=bool)
 if not DEBUG:
     SECURE_SSL_REDIRECT = False
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = USE_SSL
+    CSRF_COOKIE_SECURE = USE_SSL
+    if USE_SSL:
+        SECURE_HSTS_SECONDS = 31536000
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+        SECURE_HSTS_PRELOAD = True
 
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",

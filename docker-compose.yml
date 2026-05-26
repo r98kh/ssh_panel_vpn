@@ -76,6 +76,12 @@ services:
       web:
         condition: service_started
     command: celery -A sshvpn worker -l info --concurrency=4 -E
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A sshvpn inspect ping --timeout 10 2>/dev/null | grep -q OK || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     volumes:
       - app_logs:/app/logs
     networks:
@@ -101,6 +107,12 @@ services:
       web:
         condition: service_started
     command: celery -A sshvpn beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep 'celery.*beat' | grep -v grep || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - app_logs:/app/logs
     networks:
@@ -126,6 +138,8 @@ services:
       web:
         condition: service_started
     command: python manage.py runbot
+    profiles:
+      - with-bot
     networks:
       - backend
 
@@ -146,10 +160,11 @@ services:
     networks:
       - frontend
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health/"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/health/ || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
+      start_period: 10s
 
 volumes:
   pgdata:
