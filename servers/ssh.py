@@ -44,6 +44,15 @@ class SSHManager:
         self.key_path = key_path
         self._client: Optional[paramiko.SSHClient] = None
 
+    @staticmethod
+    def _load_private_key(path: str):
+        for key_class in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
+            try:
+                return key_class.from_private_key_file(path)
+            except Exception:
+                continue
+        raise ValueError(f"Unable to load SSH key from {path}")
+
     # -- connection lifecycle --------------------------------------------------
 
     def connect(self) -> None:
@@ -51,7 +60,7 @@ class SSHManager:
             return
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        key = paramiko.RSAKey.from_private_key_file(self.key_path) if self.key_path else None
+        key = self._load_private_key(self.key_path) if self.key_path else None
         client.connect(
             hostname=self.host,
             port=self.port,
