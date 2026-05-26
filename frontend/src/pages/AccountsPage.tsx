@@ -57,7 +57,7 @@ export default function AccountsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [newPassword, setNewPassword] = useState<{ username: string; password: string } | null>(null);
 
-  const [createForm, setCreateForm] = useState({ username: "", plan_id: "", server_id: "", password: "", note: "" });
+  const [createForm, setCreateForm] = useState({ username: "", plan_id: "", server_id: "", password: "", note: "", duration_days: "", bandwidth_limit_gb: "", max_connections: "" });
   const [bulkForm, setBulkForm] = useState({ prefix: "", count: "5", plan_id: "", server_id: "" });
   const [extendDays, setExtendDays] = useState("30");
 
@@ -70,6 +70,9 @@ export default function AccountsPage() {
         server_id: createForm.server_id ? Number(createForm.server_id) : undefined,
         password: createForm.password || undefined,
         note: createForm.note,
+        duration_days: createForm.duration_days ? Number(createForm.duration_days) : undefined,
+        bandwidth_limit_gb: createForm.bandwidth_limit_gb ? Number(createForm.bandwidth_limit_gb) : undefined,
+        max_connections: createForm.max_connections ? Number(createForm.max_connections) : undefined,
       });
       toast("success", "اکانت ایجاد شد");
       setCreateOpen(false);
@@ -317,6 +320,20 @@ export default function AccountsPage() {
           <div>
             <label className="label">رمز عبور (اختیاری)</label>
             <input className="input" dir="ltr" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="خودکار تولید می‌شود" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">مدت (روز)</label>
+              <input className="input" dir="ltr" type="number" value={createForm.duration_days} onChange={(e) => setCreateForm({ ...createForm, duration_days: e.target.value })} placeholder="از پلن" />
+            </div>
+            <div>
+              <label className="label">حجم (GB)</label>
+              <input className="input" dir="ltr" type="number" value={createForm.bandwidth_limit_gb} onChange={(e) => setCreateForm({ ...createForm, bandwidth_limit_gb: e.target.value })} placeholder="از پلن" />
+            </div>
+            <div>
+              <label className="label">کانکشن</label>
+              <input className="input" dir="ltr" type="number" value={createForm.max_connections} onChange={(e) => setCreateForm({ ...createForm, max_connections: e.target.value })} placeholder="از پلن" />
+            </div>
           </div>
           <div>
             <label className="label">یادداشت</label>

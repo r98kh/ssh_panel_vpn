@@ -25,6 +25,7 @@ urlpatterns = [
     # Accounts
     path("accounts/", views.AccountListView.as_view(), name="account-list"),
     path("accounts/<int:pk>/", views.AccountDetailView.as_view(), name="account-detail"),
+    path("accounts/<int:pk>/update/", views.AccountUpdateView.as_view(), name="account-update"),
     path("create-user/", views.CreateAccountView.as_view(), name="create-account"),
     path("bulk-create/", views.BulkCreateAccountView.as_view(), name="bulk-create"),
     path("delete-user/<int:pk>/", views.delete_account_view, name="delete-account"),

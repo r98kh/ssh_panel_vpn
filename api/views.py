@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth import authenticate, login, logout
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, permissions, status, views
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -23,6 +24,7 @@ from servers.models import Server
 from servers.tasks import check_single_server
 
 from .serializers import (
+    AccountUpdateSerializer,
     ActiveSessionSerializer,
     AuditLogSerializer,
     BulkCreateSerializer,
@@ -100,6 +102,29 @@ class AccountDetailView(generics.RetrieveAPIView):
     serializer_class = SSHAccountSerializer
 
 
+class AccountUpdateView(views.APIView):
+    def patch(self, request, pk):
+        account = get_object_or_404(SSHAccount, pk=pk)
+        ser = AccountUpdateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        if "duration_days" in data:
+            from datetime import timedelta as td
+            account.expire_date = timezone.now() + td(days=data["duration_days"])
+        if "expire_date" in data:
+            account.expire_date = data["expire_date"]
+        if "bandwidth_limit_gb" in data:
+            account.bandwidth_limit_gb = data["bandwidth_limit_gb"]
+        if "max_connections" in data:
+            account.max_connections = data["max_connections"]
+        if "note" in data:
+            account.note = data["note"]
+
+        account.save()
+        return Response(SSHAccountSerializer(account).data)
+
+
 class CreateAccountView(views.APIView):
     def post(self, request):
         ser = CreateAccountSerializer(data=request.data)
@@ -119,6 +144,9 @@ class CreateAccountView(views.APIView):
                 password=data.get("password"),
                 admin_user=request.user,
                 note=data.get("note", ""),
+                duration_days=data.get("duration_days"),
+                bandwidth_limit_gb=data.get("bandwidth_limit_gb"),
+                max_connections=data.get("max_connections"),
             )
         except AccountError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -66,7 +66,18 @@ export const createAccount = (data: {
   server_id?: number;
   password?: string;
   note?: string;
+  duration_days?: number;
+  bandwidth_limit_gb?: number;
+  max_connections?: number;
 }) => api.post<SSHAccount>("/create-user/", data);
+
+export const updateAccount = (id: number, data: {
+  duration_days?: number;
+  bandwidth_limit_gb?: number;
+  max_connections?: number;
+  expire_date?: string;
+  note?: string;
+}) => api.patch<SSHAccount>(`/accounts/${id}/update/`, data);
 
 export const bulkCreateAccounts = (data: {
   prefix: string;

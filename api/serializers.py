@@ -88,6 +88,17 @@ class CreateAccountSerializer(serializers.Serializer):
     server_id = serializers.IntegerField(required=False, help_text="Omit for auto-assign.")
     password = serializers.CharField(required=False, max_length=128)
     note = serializers.CharField(required=False, default="", allow_blank=True)
+    duration_days = serializers.IntegerField(required=False, min_value=1, max_value=3650, help_text="Override plan duration.")
+    bandwidth_limit_gb = serializers.IntegerField(required=False, min_value=0, help_text="Override plan bandwidth (0=unlimited).")
+    max_connections = serializers.IntegerField(required=False, min_value=1, max_value=100, help_text="Override plan max connections.")
+
+
+class AccountUpdateSerializer(serializers.Serializer):
+    expire_date = serializers.DateTimeField(required=False)
+    duration_days = serializers.IntegerField(required=False, min_value=1, max_value=3650, help_text="Set new duration from now.")
+    bandwidth_limit_gb = serializers.IntegerField(required=False, min_value=0)
+    max_connections = serializers.IntegerField(required=False, min_value=1, max_value=100)
+    note = serializers.CharField(required=False, allow_blank=True)
 
 
 class BulkCreateSerializer(serializers.Serializer):

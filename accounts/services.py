@@ -46,10 +46,16 @@ def create_account(
     password: Optional[str] = None,
     admin_user=None,
     note: str = "",
+    duration_days: Optional[int] = None,
+    bandwidth_limit_gb: Optional[int] = None,
+    max_connections: Optional[int] = None,
 ) -> SSHAccount:
     server = pick_best_server(server)
     password = password or generate_password()
-    expire_date = timezone.now() + timedelta(days=plan.duration_days)
+    days = duration_days if duration_days is not None else plan.duration_days
+    expire_date = timezone.now() + timedelta(days=days)
+    bw_limit = bandwidth_limit_gb if bandwidth_limit_gb is not None else plan.bandwidth_limit_gb
+    max_conn = max_connections if max_connections is not None else plan.max_connections
 
     account = SSHAccount.objects.create(
         username=username,
@@ -58,8 +64,8 @@ def create_account(
         plan=plan,
         status=SSHAccount.Status.ACTIVE,
         expire_date=expire_date,
-        max_connections=plan.max_connections,
-        bandwidth_limit_gb=plan.bandwidth_limit_gb,
+        max_connections=max_conn,
+        bandwidth_limit_gb=bw_limit,
         created_by=admin_user,
         note=note,
     )

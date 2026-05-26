@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -9,8 +10,9 @@ import {
   Wifi,
   HardDrive,
   Clock,
+  Edit3,
 } from "lucide-react";
-import { getAccount, getSessions, getLogs } from "../api/endpoints";
+import { getAccount, getSessions, getLogs, updateAccount } from "../api/endpoints";
 import type { SSHAccount, ActiveSession, AuditLog } from "../lib/types";
 import { useFetch } from "../hooks/useFetch";
 import { useToast } from "../context/ToastContext";
@@ -22,9 +24,43 @@ import { formatDate, formatDateTime, actionLabel } from "../lib/utils";
 export default function AccountDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const { data: account, loading } = useFetch(() => getAccount(Number(id)), [id]);
+  const { data: account, loading, refetch } = useFetch(() => getAccount(Number(id)), [id]);
   const { data: sessionsData } = useFetch(() => getSessions({ account__server: "" }), [id]);
   const { data: logsData } = useFetch(() => getLogs({ page: 1 }), [id]);
+
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ duration_days: "", bandwidth_limit_gb: "", max_connections: "", note: "" });
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    if (!account) return;
+    setEditForm({
+      duration_days: String(account.days_remaining || ""),
+      bandwidth_limit_gb: String(account.bandwidth_limit_gb || ""),
+      max_connections: String(account.max_connections || ""),
+      note: account.note || "",
+    });
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const payload: Record<string, any> = {};
+      if (editForm.duration_days) payload.duration_days = Number(editForm.duration_days);
+      if (editForm.bandwidth_limit_gb) payload.bandwidth_limit_gb = Number(editForm.bandwidth_limit_gb);
+      if (editForm.max_connections) payload.max_connections = Number(editForm.max_connections);
+      payload.note = editForm.note;
+      await updateAccount(Number(id), payload);
+      toast("success", "اکانت بروزرسانی شد");
+      setEditing(false);
+      refetch();
+    } catch (err: any) {
+      toast("error", err.response?.data?.detail || "خطا در بروزرسانی");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading || !account) {
     return <div className="flex justify-center py-20"><Spinner className="w-10 h-10" /></div>;
@@ -112,6 +148,40 @@ export default function AccountDetailPage() {
             {a.note && (
               <div className="mt-4 text-sm text-gray-500">
                 <span className="text-gray-400">یادداشت: </span>{a.note}
+              </div>
+            )}
+
+            {!editing ? (
+              <div className="mt-4 pt-4 border-t border-gray-800">
+                <button onClick={startEdit} className="btn-secondary btn-sm flex items-center gap-1">
+                  <Edit3 className="w-3.5 h-3.5" /> ویرایش اکانت
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
+                <h3 className="text-sm font-semibold text-white">ویرایش تنظیمات</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label text-xs">مدت جدید (روز)</label>
+                    <input className="input" dir="ltr" type="number" value={editForm.duration_days} onChange={(e) => setEditForm({ ...editForm, duration_days: e.target.value })} placeholder={String(a.days_remaining)} />
+                  </div>
+                  <div>
+                    <label className="label text-xs">حجم (GB)</label>
+                    <input className="input" dir="ltr" type="number" value={editForm.bandwidth_limit_gb} onChange={(e) => setEditForm({ ...editForm, bandwidth_limit_gb: e.target.value })} placeholder={String(a.bandwidth_limit_gb)} />
+                  </div>
+                  <div>
+                    <label className="label text-xs">حداکثر کانکشن</label>
+                    <input className="input" dir="ltr" type="number" value={editForm.max_connections} onChange={(e) => setEditForm({ ...editForm, max_connections: e.target.value })} placeholder={String(a.max_connections)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label text-xs">یادداشت</label>
+                  <input className="input" value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleSave} disabled={saving} className="btn-primary btn-sm">{saving ? "..." : "ذخیره"}</button>
+                  <button onClick={() => setEditing(false)} className="btn-secondary btn-sm">انصراف</button>
+                </div>
               </div>
             )}
           </div>
