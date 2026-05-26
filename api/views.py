@@ -135,6 +135,17 @@ class AccountUpdateView(views.APIView):
             account.note = data["note"]
 
         account.save()
+
+        from servers.ssh import get_ssh_manager
+        try:
+            with get_ssh_manager(account.server) as ssh:
+                if "duration_days" in data or "expire_date" in data:
+                    ssh.set_expiry(account.username, account.expire_date.strftime("%Y-%m-%d"))
+                if "max_connections" in data:
+                    ssh.set_max_logins(account.username, account.max_connections)
+        except Exception:
+            pass
+
         return Response(SSHAccountSerializer(account).data)
 
 
