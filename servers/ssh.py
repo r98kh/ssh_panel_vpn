@@ -120,11 +120,59 @@ class SSHManager:
 
     def set_max_logins(self, username: str, max_logins: int) -> CommandResult:
         line = f"{username}  hard  maxlogins  {max_logins}"
-        return self.run(
+        self.run(
             f"grep -q '^{_q(username)}' /etc/security/limits.conf "
             f"&& sed -i '/^{_q(username)}/c\\{line}' /etc/security/limits.conf "
             f"|| echo '{line}' >> /etc/security/limits.conf"
         )
+        self._ensure_maxlogin_script()
+        return CommandResult(exit_code=0, stdout="", stderr="")
+
+    def _ensure_maxlogin_script(self) -> None:
+        """Install a PAM script that enforces max logins on SSH connect."""
+        script = r'''#!/bin/bash
+USER="$PAM_USER"
+[ -z "$USER" ] && exit 0
+MAX=$(grep "^$USER" /etc/security/limits.conf 2>/dev/null | awk '/maxlogins/{print $4}')
+[ -z "$MAX" ] && exit 0
+CURRENT=$(ps -u "$USER" -o pid= 2>/dev/null | grep -c "sshd" 2>/dev/null || pgrep -cu "$USER" sshd 2>/dev/null || echo 0)
+CURRENT=$(pgrep -c -u "$USER" sshd 2>/dev/null || echo 0)
+if [ "$CURRENT" -gt "$MAX" ]; then
+    exit 1
+fi
+exit 0
+'''
+        check = self.run("test -f /etc/ssh/check_maxlogins.sh && echo exists")
+        if "exists" not in check.stdout:
+            self.run(f"cat > /etc/ssh/check_maxlogins.sh << 'SCRIPT'\n{script}\nSCRIPT")
+            self.run("chmod +x /etc/ssh/check_maxlogins.sh")
+            self.run(
+                "grep -q 'check_maxlogins' /etc/pam.d/sshd || "
+                "echo 'session    required    pam_exec.so /etc/ssh/check_maxlogins.sh' >> /etc/pam.d/sshd"
+            )
+
+    def setup_traffic_accounting(self, username: str) -> None:
+        """Set up iptables rules to track user bandwidth."""
+        uid = self.run(f"id -u {_q(username)}").stdout.strip()
+        if not uid or not uid.isdigit():
+            return
+        chain = f"SSHVPN_{username}"
+        exists = self.run(f"iptables -L {chain} -n 2>/dev/null")
+        if exists.exit_code != 0:
+            self.run(f"iptables -N {chain}")
+            self.run(f"iptables -A OUTPUT -m owner --uid-owner {uid} -j {chain}")
+            self.run(f"iptables -A {chain} -j RETURN")
+
+    def get_user_bandwidth_bytes(self, username: str) -> int:
+        """Get total bytes transferred by user from iptables counters."""
+        chain = f"SSHVPN_{username}"
+        result = self.run(f"iptables -L {chain} -nvx 2>/dev/null | tail -1")
+        if not result.ok or not result.stdout.strip():
+            return 0
+        parts = result.stdout.strip().split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            return int(parts[1])
+        return 0
 
     def change_password(self, username: str, password: str) -> CommandResult:
         return self.run(f"echo {_q(username)}:{_q(password)} | chpasswd")
@@ -135,19 +183,43 @@ class SSHManager:
     # -- session tracking ------------------------------------------------------
 
     def get_active_sessions(self) -> list[dict]:
-        """Return list of {'user', 'pid', 'client_ip'} for SSH sessions."""
-        result = self.run("who -u")
+        """Return list of {'user', 'pid', 'client_ip'} for active SSH connections."""
+        result = self.run(
+            "ps -eo pid,user,args --no-headers | grep 'sshd:' | grep -v grep"
+        )
         sessions = []
         if not result.ok or not result.stdout:
             return sessions
         for line in result.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 6:
-                user = parts[0]
-                pid = parts[5] if parts[5].isdigit() else "0"
-                ip_match = re.search(r"\(([^)]+)\)", line)
-                ip = ip_match.group(1) if ip_match else None
-                sessions.append({"user": user, "pid": int(pid), "client_ip": ip})
+            parts = line.strip().split(None, 2)
+            if len(parts) < 3:
+                continue
+            pid = parts[0]
+            args = parts[2]
+            match = re.match(r"sshd:\s+(\S+?)(?:@|$)", args)
+            if not match:
+                continue
+            user = match.group(1)
+            if user in ("root", "sshd", "priv"):
+                continue
+            ip = None
+            ip_result = self.run(
+                f"cat /proc/{pid}/net/tcp 2>/dev/null | awk 'NR>1{{print $3}}' | head -1"
+            )
+            if ip_result.ok and ip_result.stdout:
+                hex_ip = ip_result.stdout.split(":")[0] if ":" in ip_result.stdout else ""
+                if len(hex_ip) == 8:
+                    try:
+                        ip = ".".join(str(int(hex_ip[i:i+2], 16)) for i in (6, 4, 2, 0))
+                    except ValueError:
+                        pass
+            if not ip:
+                ss_result = self.run(f"ss -tnp 2>/dev/null | grep 'pid={pid}' | awk '{{print $5}}'")
+                if ss_result.ok and ss_result.stdout:
+                    addr = ss_result.stdout.splitlines()[0]
+                    ip = addr.rsplit(":", 1)[0] if ":" in addr else None
+
+            sessions.append({"user": user, "pid": int(pid), "client_ip": ip})
         return sessions
 
     # -- health metrics --------------------------------------------------------

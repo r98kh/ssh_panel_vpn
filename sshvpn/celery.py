@@ -26,4 +26,8 @@ app.conf.beat_schedule = {
         "task": "accounts.tasks.sync_active_sessions",
         "schedule": 30.0,
     },
+    "sync-bandwidth-every-5-min": {
+        "task": "accounts.tasks.sync_bandwidth_usage",
+        "schedule": crontab(minute="*/5"),
+    },
 }

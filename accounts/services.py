@@ -76,6 +76,8 @@ def create_account(
             raise AccountError(f"Remote user creation failed: {result.stderr}")
         ssh.set_expiry(username, expire_date.strftime("%Y-%m-%d"))
         ssh.set_max_logins(username, max_conn)
+        if bw_limit > 0:
+            ssh.setup_traffic_accounting(username)
 
     AuditLog.objects.create(
         action=AuditLog.Action.CREATE,

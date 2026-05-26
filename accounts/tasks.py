@@ -59,6 +59,40 @@ def cleanup_expired_accounts(grace_days: int = 3):
     return count
 
 
+@shared_task(name="accounts.tasks.sync_bandwidth_usage")
+def sync_bandwidth_usage():
+    """Read bandwidth counters from iptables and update accounts."""
+    from accounts.models import SSHAccount
+    from servers.models import Server
+    from servers.ssh import get_ssh_manager
+
+    servers = Server.objects.filter(status=Server.Status.ACTIVE)
+    for srv in servers:
+        try:
+            accounts = SSHAccount.objects.filter(
+                server=srv,
+                status=SSHAccount.Status.ACTIVE,
+                bandwidth_limit_gb__gt=0,
+            )
+            if not accounts.exists():
+                continue
+            with get_ssh_manager(srv) as ssh:
+                for acc in accounts:
+                    bytes_used = ssh.get_user_bandwidth_bytes(acc.username)
+                    gb_used = round(bytes_used / (1024 ** 3), 3)
+                    if gb_used != acc.bandwidth_used_gb:
+                        acc.bandwidth_used_gb = gb_used
+                        acc.save(update_fields=["bandwidth_used_gb", "updated_at"])
+                    if acc.bandwidth_limit_gb > 0 and gb_used >= acc.bandwidth_limit_gb:
+                        ssh.lock_user(acc.username)
+                        acc.status = SSHAccount.Status.SUSPENDED
+                        acc.save(update_fields=["status", "updated_at"])
+                        logger.info("User %s suspended: bandwidth limit exceeded (%.2f/%.0f GB)",
+                                    acc.username, gb_used, acc.bandwidth_limit_gb)
+        except Exception:
+            logger.exception("Bandwidth sync failed for %s", srv)
+
+
 @shared_task(name="accounts.tasks.sync_active_sessions")
 def sync_active_sessions():
     """Fetch active SSH sessions from every server, store in DB, and enforce limits."""
