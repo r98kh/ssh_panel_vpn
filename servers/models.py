@@ -2,6 +2,12 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+PROTOCOL_CHOICES = [
+    ("ssh", "SSH"),
+    ("shadowlink", "ShadowLink"),
+]
+
+
 class Server(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
@@ -20,9 +26,41 @@ class Server(models.Model):
         max_length=500,
         help_text="Absolute path to private key on the panel server.",
     )
+    protocol_type = models.CharField(
+        max_length=20,
+        choices=PROTOCOL_CHOICES,
+        default="ssh",
+    )
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.ACTIVE)
     location = models.CharField(max_length=120, blank=True, help_text="e.g. Frankfurt, DE")
     max_users = models.PositiveIntegerField(default=100)
+
+    # ShadowLink-specific fields
+    shadowlink_port = models.PositiveIntegerField(
+        default=8443,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+        help_text="Port the ShadowLink Go server listens on.",
+    )
+    shadowlink_ws_path = models.CharField(
+        max_length=100,
+        default="/ws",
+        help_text="WebSocket path for ShadowLink connections.",
+    )
+    shadowlink_domain = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Domain pointing to this server (for TLS SNI and CDN).",
+    )
+    shadowlink_bridge_port = models.PositiveIntegerField(
+        default=9090,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+        help_text="Port for the ShadowLink bridge API (localhost only).",
+    )
+    shadowlink_api_key = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text="API key for authenticating with the ShadowLink bridge.",
+    )
 
     # Health snapshot (updated by Celery beat)
     cpu_usage = models.FloatField(default=0, help_text="Percentage")
@@ -47,3 +85,7 @@ class Server(models.Model):
     @property
     def is_available(self):
         return self.status == self.Status.ACTIVE and self.current_user_count < self.max_users
+
+    @property
+    def is_shadowlink(self):
+        return self.protocol_type == "shadowlink"

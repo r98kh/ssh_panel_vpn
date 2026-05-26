@@ -45,4 +45,11 @@ urlpatterns = [
     # Public (no auth required)
     path("public/status/<uuid:token>/", views.PublicAccountStatusView.as_view(), name="public-status"),
     path("public/plans/", views.PublicPlanListView.as_view(), name="public-plans"),
+
+    # ShadowLink
+    path("shadowlink/accounts/", views.ShadowLinkAccountListView.as_view(), name="shadowlink-account-list"),
+    path("shadowlink/accounts/create/", views.CreateShadowLinkAccountView.as_view(), name="shadowlink-create-account"),
+    path("shadowlink/config/<uuid:token>/", views.shadowlink_client_config, name="shadowlink-client-config"),
+    path("shadowlink/servers/<int:pk>/deploy/", views.shadowlink_deploy_server, name="shadowlink-deploy"),
+    path("shadowlink/servers/<int:pk>/status/", views.shadowlink_server_status, name="shadowlink-server-status"),
 ]

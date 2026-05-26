@@ -20,6 +20,11 @@ class SSHAccount(models.Model):
         EXPIRED = "expired", "Expired"
         DELETED = "deleted", "Deleted"
 
+    PROTOCOL_CHOICES = [
+        ("ssh", "SSH"),
+        ("shadowlink", "ShadowLink"),
+    ]
+
     username = models.CharField(max_length=32)
     password_display = models.CharField(
         max_length=128,
@@ -38,6 +43,11 @@ class SSHAccount(models.Model):
         blank=True,
         related_name="accounts",
     )
+    protocol_type = models.CharField(
+        max_length=20,
+        choices=PROTOCOL_CHOICES,
+        default="ssh",
+    )
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.ACTIVE)
     expire_date = models.DateTimeField()
     max_connections = models.PositiveIntegerField(default=1)
@@ -45,6 +55,11 @@ class SSHAccount(models.Model):
     bandwidth_used_gb = models.FloatField(default=0)
 
     access_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    auth_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        help_text="Authentication token for ShadowLink protocol.",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

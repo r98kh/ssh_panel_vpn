@@ -6,7 +6,18 @@ RUN npm ci --silent
 COPY frontend/ .
 RUN npm run build
 
-# Stage 2: Python Application
+# Stage 2: Build ShadowLink Go Binaries
+FROM golang:1.23-alpine AS shadowlink-build
+WORKDIR /build
+COPY shadowlink/go.mod shadowlink/go.sum ./
+RUN go mod download
+COPY shadowlink/ .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+    -o /build/dist/shadowlink-server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+    -o /build/dist/shadowlink-client ./cmd/client
+
+# Stage 3: Python Application
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,6 +35,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY --from=frontend-build /build/dist /app/frontend/dist
+COPY --from=shadowlink-build /build/dist/shadowlink-server /usr/local/bin/shadowlink-server
+COPY --from=shadowlink-build /build/dist/shadowlink-client /usr/local/bin/shadowlink-client
 
 RUN mkdir -p /app/logs /app/staticfiles
 

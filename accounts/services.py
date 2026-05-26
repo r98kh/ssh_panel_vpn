@@ -1,7 +1,7 @@
 """
 Account Service Layer
 ======================
-All business logic for SSH account lifecycle management.
+All business logic for SSH/ShadowLink account lifecycle management.
 Controllers (views / API) call into this module — never touch SSH directly.
 """
 import logging
@@ -17,6 +17,11 @@ from servers.models import Server
 from servers.ssh import get_ssh_manager
 
 logger = logging.getLogger(__name__)
+
+
+def _get_shadowlink_manager(server):
+    from servers.shadowlink import get_shadowlink_manager
+    return get_shadowlink_manager(server)
 
 
 class AccountError(Exception):
@@ -49,6 +54,7 @@ def create_account(
     duration_days: Optional[int] = None,
     bandwidth_limit_gb: Optional[int] = None,
     max_connections: Optional[int] = None,
+    protocol_type: Optional[str] = None,
 ) -> SSHAccount:
     server = pick_best_server(server)
     password = password or generate_password()
@@ -56,12 +62,14 @@ def create_account(
     expire_date = timezone.now() + timedelta(days=days)
     bw_limit = bandwidth_limit_gb if bandwidth_limit_gb is not None else plan.bandwidth_limit_gb
     max_conn = max_connections if max_connections is not None else plan.max_connections
+    proto = protocol_type or server.protocol_type
 
     account = SSHAccount.objects.create(
         username=username,
-        password_display=password,
+        password_display=password if proto == "ssh" else "",
         server=server,
         plan=plan,
+        protocol_type=proto,
         status=SSHAccount.Status.ACTIVE,
         expire_date=expire_date,
         max_connections=max_conn,
@@ -70,28 +78,48 @@ def create_account(
         note=note,
     )
 
-    with get_ssh_manager(server) as ssh:
-        result = ssh.create_user(username, password)
-        if not result.ok:
-            raise AccountError(f"Remote user creation failed: {result.stderr}")
-        ssh.set_expiry(username, expire_date.strftime("%Y-%m-%d"))
-        ssh.set_max_logins(username, max_conn)
-        if bw_limit > 0:
-            ssh.setup_traffic_accounting(username)
+    if proto == "shadowlink":
+        _provision_shadowlink_account(account, server, max_conn)
+    else:
+        with get_ssh_manager(server) as ssh:
+            result = ssh.create_user(username, password)
+            if not result.ok:
+                raise AccountError(f"Remote user creation failed: {result.stderr}")
+            ssh.set_expiry(username, expire_date.strftime("%Y-%m-%d"))
+            ssh.set_max_logins(username, max_conn)
+            if bw_limit > 0:
+                ssh.setup_traffic_accounting(username)
 
     AuditLog.objects.create(
         action=AuditLog.Action.CREATE,
         account=account,
         admin_user=admin_user,
-        detail=f"Plan={plan.name}, Server={server.name}",
+        detail=f"Plan={plan.name}, Server={server.name}, Protocol={proto}",
     )
-    logger.info("Account created: %s on %s", username, server)
+    logger.info("Account created: %s on %s (protocol=%s)", username, server, proto)
     return account
 
 
+def _provision_shadowlink_account(account: SSHAccount, server: Server, max_conns: int) -> None:
+    """Register the account's auth token with the ShadowLink bridge."""
+    try:
+        mgr = _get_shadowlink_manager(server)
+        mgr.register_token(str(account.auth_token), max_conns)
+    except Exception as e:
+        raise AccountError(f"ShadowLink provisioning failed: {e}")
+
+
 def delete_account(account: SSHAccount, admin_user=None) -> None:
-    with get_ssh_manager(account.server) as ssh:
-        ssh.delete_user(account.username)
+    if account.protocol_type == "shadowlink":
+        try:
+            mgr = _get_shadowlink_manager(account.server)
+            mgr.deregister_token(str(account.auth_token))
+        except Exception as e:
+            logger.warning("ShadowLink deregister failed: %s", e)
+    else:
+        with get_ssh_manager(account.server) as ssh:
+            ssh.delete_user(account.username)
+
     account.status = SSHAccount.Status.DELETED
     account.save(update_fields=["status", "updated_at"])
     AuditLog.objects.create(
@@ -103,8 +131,16 @@ def delete_account(account: SSHAccount, admin_user=None) -> None:
 
 
 def suspend_account(account: SSHAccount, admin_user=None) -> None:
-    with get_ssh_manager(account.server) as ssh:
-        ssh.lock_user(account.username)
+    if account.protocol_type == "shadowlink":
+        try:
+            mgr = _get_shadowlink_manager(account.server)
+            mgr.suspend_token(str(account.auth_token))
+        except Exception as e:
+            logger.warning("ShadowLink suspend failed: %s", e)
+    else:
+        with get_ssh_manager(account.server) as ssh:
+            ssh.lock_user(account.username)
+
     account.status = SSHAccount.Status.SUSPENDED
     account.save(update_fields=["status", "updated_at"])
     AuditLog.objects.create(
@@ -115,8 +151,16 @@ def suspend_account(account: SSHAccount, admin_user=None) -> None:
 
 
 def activate_account(account: SSHAccount, admin_user=None) -> None:
-    with get_ssh_manager(account.server) as ssh:
-        ssh.unlock_user(account.username)
+    if account.protocol_type == "shadowlink":
+        try:
+            mgr = _get_shadowlink_manager(account.server)
+            mgr.activate_token(str(account.auth_token))
+        except Exception as e:
+            logger.warning("ShadowLink activate failed: %s", e)
+    else:
+        with get_ssh_manager(account.server) as ssh:
+            ssh.unlock_user(account.username)
+
     account.status = SSHAccount.Status.ACTIVE
     account.save(update_fields=["status", "updated_at"])
     AuditLog.objects.create(

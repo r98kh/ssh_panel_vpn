@@ -1,0 +1,38 @@
+# ShadowLink Server Configuration
+
+server:
+  listen_addr: "0.0.0.0:8443"
+  ws_path: "/ws"
+  
+  # TLS certificate (required for direct connections, not needed behind CDN)
+  tls_cert: "/etc/shadowlink/cert.pem"
+  tls_key: "/etc/shadowlink/key.pem"
+  
+  # Decoy website directory (served for non-WebSocket requests)
+  # Leave empty for built-in default page
+  decoy_dir: ""
+
+# Bridge API for Django integration (localhost only)
+bridge:
+  listen_addr: "127.0.0.1:9090"
+  api_key: "change-me-to-a-secure-key"
+
+# Obfuscation settings
+obfuscation:
+  padding:
+    enabled: true
+    min_bytes: 16
+    max_bytes: 128
+  timing:
+    enabled: true
+    min_delay: "0ms"
+    max_delay: "50ms"
+  traffic_shape:
+    enabled: true
+    idle_interval: "5s"
+
+# Session management
+sessions:
+  idle_timeout: "5m"
+  cleanup_interval: "1m"
+  max_per_token: 3

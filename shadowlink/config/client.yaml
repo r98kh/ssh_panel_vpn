@@ -1,0 +1,36 @@
+# ShadowLink Client Configuration
+
+client:
+  # Local SOCKS5 proxy address
+  listen_addr: "127.0.0.1:1080"
+  
+  # Server connection
+  server_addr: "example.com:443"
+  server_sni: "example.com"
+  ws_path: "/ws"
+  auth_token: "your-auth-token-here"
+  
+  # TLS settings
+  use_tls: true
+  insecure: false  # Set to true for self-signed certs (testing only)
+
+# CDN routing (optional, for Cloudflare etc.)
+cdn:
+  enabled: false
+  cdn_address: ""  # Leave empty to resolve via DNS
+  domain: "example.com"
+  ws_path: "/ws"
+
+# Obfuscation settings
+obfuscation:
+  padding:
+    enabled: true
+    min_bytes: 16
+    max_bytes: 128
+  timing:
+    enabled: true
+    min_delay: "0ms"
+    max_delay: "50ms"
+  traffic_shape:
+    enabled: true
+    idle_interval: "5s"

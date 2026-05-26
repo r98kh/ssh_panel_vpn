@@ -181,6 +181,7 @@ volumes:
       device: /opt/sshvpn/keys
   certbot_www:
   certbot_conf:
+  shadowlink_dist:
 
 networks:
   backend:

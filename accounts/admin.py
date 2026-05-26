@@ -20,10 +20,10 @@ class SSHAccountResource(resources.ModelResource):
 class SSHAccountAdmin(ImportExportModelAdmin):
     resource_class = SSHAccountResource
     list_display = [
-        "username", "server_link", "status_badge", "plan",
+        "username", "server_link", "protocol_badge", "status_badge", "plan",
         "expire_date", "days_remaining", "max_connections", "created_at",
     ]
-    list_filter = ["status", "server", "plan", "created_at"]
+    list_filter = ["status", "protocol_type", "server", "plan", "created_at"]
     search_fields = ["username", "note", "server__ip_address"]
     readonly_fields = ["password_display", "bandwidth_used_gb", "created_at", "updated_at"]
     list_per_page = 50
@@ -36,6 +36,16 @@ class SSHAccountAdmin(ImportExportModelAdmin):
             obj.server_id, obj.server
         )
     server_link.short_description = "Server"
+
+    def protocol_badge(self, obj):
+        colors = {"ssh": "#17a2b8", "shadowlink": "#6f42c1"}
+        color = colors.get(obj.protocol_type, "#6c757d")
+        return format_html(
+            '<span style="background:{};color:#fff;padding:3px 10px;'
+            'border-radius:12px;font-size:11px;">{}</span>',
+            color, obj.get_protocol_type_display()
+        )
+    protocol_badge.short_description = "Protocol"
 
     def status_badge(self, obj):
         colors = {

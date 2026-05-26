@@ -12,8 +12,10 @@ class ServerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Server
         fields = [
-            "id", "name", "ip_address", "ssh_port", "status", "location",
+            "id", "name", "ip_address", "ssh_port", "protocol_type",
+            "status", "location",
             "max_users", "current_user_count", "is_available",
+            "shadowlink_port", "shadowlink_ws_path", "shadowlink_domain",
             "cpu_usage", "ram_usage", "disk_usage", "uptime_seconds",
             "last_health_check", "created_at",
         ]
@@ -50,13 +52,15 @@ class SSHAccountSerializer(serializers.ModelSerializer):
         model = SSHAccount
         fields = [
             "id", "username", "password_display", "server", "server_name",
-            "server_ip", "server_ssh_port", "plan", "plan_name", "status",
+            "server_ip", "server_ssh_port", "plan", "plan_name",
+            "protocol_type", "status",
             "expire_date", "max_connections", "bandwidth_limit_gb",
             "bandwidth_used_gb", "days_remaining", "is_expired",
-            "access_token", "note", "created_at",
+            "access_token", "auth_token", "note", "created_at",
         ]
         read_only_fields = [
-            "password_display", "bandwidth_used_gb", "created_at", "access_token",
+            "password_display", "bandwidth_used_gb", "created_at",
+            "access_token", "auth_token",
         ]
 
 
@@ -141,3 +145,48 @@ class PaymentWebhookSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)
     status = serializers.ChoiceField(choices=["paid", "failed", "pending"])
     signature = serializers.CharField()
+
+
+class ShadowLinkAccountSerializer(serializers.ModelSerializer):
+    """Serializer for ShadowLink-specific account info."""
+    server_name = serializers.CharField(source="server.name", read_only=True)
+    server_ip = serializers.CharField(source="server.ip_address", read_only=True)
+    server_domain = serializers.CharField(source="server.shadowlink_domain", read_only=True)
+    plan_name = serializers.CharField(source="plan.name", read_only=True, default=None)
+    days_remaining = serializers.ReadOnlyField()
+
+    class Meta:
+        model = SSHAccount
+        fields = [
+            "id", "username", "server", "server_name", "server_ip",
+            "server_domain", "plan", "plan_name", "protocol_type",
+            "status", "expire_date", "max_connections",
+            "bandwidth_limit_gb", "bandwidth_used_gb", "days_remaining",
+            "auth_token", "access_token", "note", "created_at",
+        ]
+        read_only_fields = ["auth_token", "access_token", "bandwidth_used_gb", "created_at"]
+
+
+class CreateShadowLinkAccountSerializer(serializers.Serializer):
+    username = serializers.RegexField(
+        r"^[a-z_][a-z0-9_-]{2,31}$",
+        help_text="Account identifier (3-32 chars, lowercase).",
+    )
+    plan_id = serializers.IntegerField()
+    server_id = serializers.IntegerField(required=False, help_text="Omit for auto-assign.")
+    note = serializers.CharField(required=False, default="", allow_blank=True)
+    duration_days = serializers.IntegerField(required=False, min_value=1, max_value=3650)
+    max_connections = serializers.IntegerField(required=False, min_value=1, max_value=100)
+
+
+class ShadowLinkServerStatusSerializer(serializers.Serializer):
+    running = serializers.BooleanField()
+    pid = serializers.IntegerField()
+    status = serializers.CharField()
+
+
+class ShadowLinkClientConfigSerializer(serializers.Serializer):
+    """Read-only serializer for generated client config."""
+    client = serializers.DictField()
+    cdn = serializers.DictField()
+    obfuscation = serializers.DictField()

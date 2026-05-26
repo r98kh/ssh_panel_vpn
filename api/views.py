@@ -29,10 +29,13 @@ from .serializers import (
     AuditLogSerializer,
     BulkCreateSerializer,
     CreateAccountSerializer,
+    CreateShadowLinkAccountSerializer,
     ExtendAccountSerializer,
     PaymentWebhookSerializer,
     PlanSerializer,
     PublicAccountStatusSerializer,
+    ShadowLinkAccountSerializer,
+    ShadowLinkClientConfigSerializer,
     SSHAccountSerializer,
     ServerCreateSerializer,
     ServerSerializer,
@@ -424,3 +427,121 @@ class PublicPlanListView(generics.ListAPIView):
     serializer_class = PlanSerializer
     queryset = Plan.objects.filter(is_active=True)
     pagination_class = None
+
+
+# ---------------------------------------------------------------------------
+# ShadowLink endpoints
+# ---------------------------------------------------------------------------
+
+class ShadowLinkAccountListView(generics.ListAPIView):
+    serializer_class = ShadowLinkAccountSerializer
+
+    def get_queryset(self):
+        return (
+            SSHAccount.objects
+            .filter(protocol_type="shadowlink")
+            .select_related("server", "plan")
+            .exclude(status=SSHAccount.Status.DELETED)
+        )
+
+
+class CreateShadowLinkAccountView(views.APIView):
+    def post(self, request):
+        ser = CreateShadowLinkAccountSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        plan = get_object_or_404(Plan, pk=data["plan_id"], is_active=True)
+        server = None
+        if "server_id" in data:
+            server = get_object_or_404(Server, pk=data["server_id"])
+
+        try:
+            account = create_account(
+                username=data["username"],
+                plan=plan,
+                server=server,
+                admin_user=request.user,
+                note=data.get("note", ""),
+                duration_days=data.get("duration_days"),
+                max_connections=data.get("max_connections"),
+                protocol_type="shadowlink",
+            )
+        except AccountError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            ShadowLinkAccountSerializer(account).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def shadowlink_client_config(request, token):
+    """Public endpoint: download ShadowLink client config by auth token."""
+    account = get_object_or_404(
+        SSHAccount.objects.select_related("server"),
+        auth_token=token,
+        protocol_type="shadowlink",
+    )
+
+    if account.status not in (SSHAccount.Status.ACTIVE,):
+        return Response(
+            {"detail": "Account is not active."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    from servers.shadowlink import ShadowLinkManager
+    config = ShadowLinkManager.generate_client_config(account, account.server)
+    return Response(config)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAdminUser])
+def shadowlink_deploy_server(request, pk):
+    """Deploy ShadowLink binary and config to a server node."""
+    server = get_object_or_404(Server, pk=pk, protocol_type="shadowlink")
+    binary_path = request.data.get("binary_path", "")
+
+    if not binary_path:
+        return Response(
+            {"detail": "binary_path is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from servers.shadowlink import get_shadowlink_manager, ShadowLinkError
+    mgr = get_shadowlink_manager(server)
+    try:
+        mgr.full_deploy(binary_path)
+    except ShadowLinkError as e:
+        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"detail": "ShadowLink deployed successfully."})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAdminUser])
+def shadowlink_server_status(request, pk):
+    """Check ShadowLink process status on a server."""
+    server = get_object_or_404(Server, pk=pk, protocol_type="shadowlink")
+
+    from servers.shadowlink import get_shadowlink_manager, ShadowLinkError
+    mgr = get_shadowlink_manager(server)
+    try:
+        svc_status = mgr.service_status()
+        bridge_status = mgr.health_check()
+        return Response({
+            "service": svc_status,
+            "bridge": bridge_status,
+        })
+    except ShadowLinkError as e:
+        return Response({
+            "service": mgr.service_status() if True else {},
+            "bridge": {"status": "unreachable", "error": str(e)},
+        })
+    except Exception as e:
+        return Response(
+            {"detail": f"Status check failed: {e}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

@@ -7,11 +7,11 @@ from .models import Server
 @admin.register(Server)
 class ServerAdmin(admin.ModelAdmin):
     list_display = [
-        "name", "ip_address", "ssh_port", "status_badge", "location",
+        "name", "ip_address", "protocol_badge", "ssh_port", "status_badge", "location",
         "user_count_display", "cpu_bar", "ram_bar", "disk_bar",
         "last_health_check",
     ]
-    list_filter = ["status", "location"]
+    list_filter = ["status", "location", "protocol_type"]
     search_fields = ["name", "ip_address", "location"]
     readonly_fields = [
         "cpu_usage", "ram_usage", "disk_usage",
@@ -19,7 +19,11 @@ class ServerAdmin(admin.ModelAdmin):
     ]
     fieldsets = (
         (None, {
-            "fields": ("name", "ip_address", "ssh_port", "ssh_user", "ssh_key_path", "status", "location", "max_users"),
+            "fields": ("name", "ip_address", "protocol_type", "ssh_port", "ssh_user", "ssh_key_path", "status", "location", "max_users"),
+        }),
+        ("ShadowLink Settings", {
+            "classes": ("collapse",),
+            "fields": ("shadowlink_port", "shadowlink_ws_path", "shadowlink_domain", "shadowlink_bridge_port", "shadowlink_api_key"),
         }),
         ("Health (auto-updated)", {
             "classes": ("collapse",),
@@ -41,6 +45,16 @@ class ServerAdmin(admin.ModelAdmin):
             color, obj.get_status_display()
         )
     status_badge.short_description = "Status"
+
+    def protocol_badge(self, obj):
+        colors = {"ssh": "#17a2b8", "shadowlink": "#6f42c1"}
+        color = colors.get(obj.protocol_type, "#6c757d")
+        return format_html(
+            '<span style="background:{};color:#fff;padding:3px 10px;'
+            'border-radius:12px;font-size:11px;">{}</span>',
+            color, obj.get_protocol_type_display()
+        )
+    protocol_badge.short_description = "Protocol"
 
     def user_count_display(self, obj):
         return f"{obj.current_user_count} / {obj.max_users}"
