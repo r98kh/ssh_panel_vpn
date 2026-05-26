@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/user/shadowlink/internal/proxy"
@@ -15,6 +17,7 @@ type BridgeServer struct {
 	tokens     map[string]*TokenInfo // auth_token -> info
 	relay      *proxy.ServerRelay
 	apiKey     string
+	storePath  string
 	mu         sync.RWMutex
 }
 
@@ -25,10 +28,45 @@ type TokenInfo struct {
 }
 
 func NewBridgeServer(apiKey string, relay *proxy.ServerRelay) *BridgeServer {
-	return &BridgeServer{
-		tokens: make(map[string]*TokenInfo),
-		relay:  relay,
-		apiKey: apiKey,
+	bs := &BridgeServer{
+		tokens:    make(map[string]*TokenInfo),
+		relay:     relay,
+		apiKey:    apiKey,
+		storePath: "/opt/shadowlink/tokens.json",
+	}
+	bs.loadTokens()
+	return bs
+}
+
+func (bs *BridgeServer) loadTokens() {
+	data, err := os.ReadFile(bs.storePath)
+	if err != nil {
+		return
+	}
+	var tokens []*TokenInfo
+	if err := json.Unmarshal(data, &tokens); err != nil {
+		log.Printf("[bridge] failed to load tokens: %v", err)
+		return
+	}
+	for _, t := range tokens {
+		bs.tokens[t.Token] = t
+	}
+	log.Printf("[bridge] loaded %d tokens from disk", len(tokens))
+}
+
+func (bs *BridgeServer) saveTokens() {
+	tokens := make([]*TokenInfo, 0, len(bs.tokens))
+	for _, t := range bs.tokens {
+		tokens = append(tokens, t)
+	}
+	data, err := json.MarshalIndent(tokens, "", "  ")
+	if err != nil {
+		log.Printf("[bridge] failed to marshal tokens: %v", err)
+		return
+	}
+	os.MkdirAll(filepath.Dir(bs.storePath), 0755)
+	if err := os.WriteFile(bs.storePath, data, 0600); err != nil {
+		log.Printf("[bridge] failed to save tokens: %v", err)
 	}
 }
 
@@ -93,6 +131,7 @@ func (bs *BridgeServer) registerToken(w http.ResponseWriter, r *http.Request) {
 		MaxConns: req.MaxConns,
 		Active:   true,
 	}
+	bs.saveTokens()
 	bs.mu.Unlock()
 
 	log.Printf("[bridge] registered token: %.8s... (max_conns: %d)", req.Token, req.MaxConns)
@@ -110,6 +149,7 @@ func (bs *BridgeServer) deregisterToken(w http.ResponseWriter, r *http.Request) 
 
 	bs.mu.Lock()
 	delete(bs.tokens, req.Token)
+	bs.saveTokens()
 	bs.mu.Unlock()
 
 	log.Printf("[bridge] deregistered token: %.8s...", req.Token)
@@ -128,6 +168,7 @@ func (bs *BridgeServer) suspendToken(w http.ResponseWriter, r *http.Request) {
 	bs.mu.Lock()
 	if info, ok := bs.tokens[req.Token]; ok {
 		info.Active = false
+		bs.saveTokens()
 	}
 	bs.mu.Unlock()
 
@@ -146,6 +187,7 @@ func (bs *BridgeServer) activateToken(w http.ResponseWriter, r *http.Request) {
 	bs.mu.Lock()
 	if info, ok := bs.tokens[req.Token]; ok {
 		info.Active = true
+		bs.saveTokens()
 	}
 	bs.mu.Unlock()
 

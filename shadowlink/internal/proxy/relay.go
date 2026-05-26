@@ -48,23 +48,9 @@ func (sr *ServerRelay) HandleConnection(wsConn *transport.WSConn) {
 		return
 	}
 
-	valid, maxConns := sr.authFunc(authToken)
-	if !valid {
-		log.Printf("[server] auth failed for token: %s", authToken)
-		wsConn.Close()
-		return
-	}
-
 	session.AuthToken = authToken
 	session.SetCipher(cipher)
 	session.SetState(protocol.SessionStateActive)
-
-	sm := protocol.NewSessionManager(maxConns)
-	if err := sm.Add(session); err != nil {
-		log.Printf("[server] session limit reached for token: %s", authToken)
-		wsConn.Close()
-		return
-	}
 
 	sr.mu.Lock()
 	sr.streams[session.ID] = make(map[uint32]net.Conn)
@@ -118,6 +104,15 @@ func (sr *ServerRelay) performServerHandshake(wsConn *transport.WSConn, session 
 	authToken, err := protocol.ParseClientAuth(authBuf[:n], challenge, sessionKey)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse client auth: %w", err)
+	}
+
+	// Validate token BEFORE sending OK
+	if sr.authFunc != nil {
+		valid, _ := sr.authFunc(authToken)
+		if !valid {
+			wsConn.Write([]byte("DENIED"))
+			return nil, "", fmt.Errorf("auth denied for token: %s", authToken)
+		}
 	}
 
 	ack := []byte("OK")
