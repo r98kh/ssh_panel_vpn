@@ -203,21 +203,21 @@ exit 0
             if user in ("root", "sshd", "priv"):
                 continue
             ip = None
-            ip_result = self.run(
-                f"cat /proc/{pid}/net/tcp 2>/dev/null | awk 'NR>1{{print $3}}' | head -1"
-            )
-            if ip_result.ok and ip_result.stdout:
-                hex_ip = ip_result.stdout.split(":")[0] if ":" in ip_result.stdout else ""
-                if len(hex_ip) == 8:
-                    try:
-                        ip = ".".join(str(int(hex_ip[i:i+2], 16)) for i in (6, 4, 2, 0))
-                    except ValueError:
-                        pass
+            ss_result = self.run(f"ss -tnp 2>/dev/null | grep 'pid={pid}' | awk '{{print $5}}'")
+            if ss_result.ok and ss_result.stdout:
+                for line in ss_result.stdout.splitlines():
+                    addr = line.strip()
+                    if ":" in addr:
+                        candidate = addr.rsplit(":", 1)[0]
+                        if candidate and candidate not in ("0.0.0.0", "127.0.0.1", "*"):
+                            ip = candidate
+                            break
             if not ip:
-                ss_result = self.run(f"ss -tnp 2>/dev/null | grep 'pid={pid}' | awk '{{print $5}}'")
-                if ss_result.ok and ss_result.stdout:
-                    addr = ss_result.stdout.splitlines()[0]
-                    ip = addr.rsplit(":", 1)[0] if ":" in addr else None
+                who_result = self.run(f"grep -a 'sshd.*{pid}' /var/log/auth.log 2>/dev/null | tail -1")
+                if who_result.ok and who_result.stdout:
+                    ip_match = re.search(r"from\s+(\d+\.\d+\.\d+\.\d+)", who_result.stdout)
+                    if ip_match:
+                        ip = ip_match.group(1)
 
             sessions.append({"user": user, "pid": int(pid), "client_ip": ip})
         return sessions
