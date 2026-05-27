@@ -2,14 +2,14 @@ package proxy
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 	"time"
-
-	"github.com/things-go/go-socks5"
 
 	"github.com/user/shadowlink/internal/obfuscation"
 	"github.com/user/shadowlink/internal/protocol"
@@ -171,7 +171,7 @@ func (c *Client) readLoop() {
 				stream.writer.Write(frame.Payload[4:])
 			}
 		case protocol.FrameKeepalive:
-			// Ignore keepalive frames (traffic shaping)
+			continue
 		case protocol.FrameClose:
 			return
 		}
@@ -180,12 +180,100 @@ func (c *Client) readLoop() {
 
 // RunSOCKS5 starts the local SOCKS5 proxy server.
 func (c *Client) RunSOCKS5(ctx context.Context) error {
-	server := socks5.NewServer(
-		socks5.WithDial(c.dialThroughTunnel),
-	)
+	listener, err := net.Listen("tcp", c.config.ListenAddr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
 
 	log.Printf("[client] SOCKS5 proxy listening on %s", c.config.ListenAddr)
-	return server.ListenAndServe("tcp", c.config.ListenAddr)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				log.Printf("[socks5] accept error: %v", err)
+				continue
+			}
+		}
+		go c.handleSOCKS5(ctx, conn)
+	}
+}
+
+func (c *Client) handleSOCKS5(ctx context.Context, conn net.Conn) {
+	defer conn.Close()
+
+	// SOCKS5 greeting
+	buf := make([]byte, 258)
+	n, err := conn.Read(buf)
+	if err != nil || n < 2 || buf[0] != 0x05 {
+		return
+	}
+	// No auth
+	conn.Write([]byte{0x05, 0x00})
+
+	// SOCKS5 request
+	n, err = conn.Read(buf)
+	if err != nil || n < 7 || buf[0] != 0x05 || buf[1] != 0x01 {
+		conn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	var destAddr string
+	var destPort uint16
+	switch buf[3] {
+	case 0x01: // IPv4
+		if n < 10 {
+			return
+		}
+		destAddr = net.IP(buf[4:8]).String()
+		destPort = binary.BigEndian.Uint16(buf[8:10])
+	case 0x03: // Domain
+		domainLen := int(buf[4])
+		if n < 5+domainLen+2 {
+			return
+		}
+		destAddr = string(buf[5 : 5+domainLen])
+		destPort = binary.BigEndian.Uint16(buf[5+domainLen : 7+domainLen])
+	case 0x04: // IPv6
+		if n < 22 {
+			return
+		}
+		destAddr = net.IP(buf[4:20]).String()
+		destPort = binary.BigEndian.Uint16(buf[20:22])
+	default:
+		conn.Write([]byte{0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	target := net.JoinHostPort(destAddr, strconv.Itoa(int(destPort)))
+	log.Printf("[socks5] CONNECT %s", target)
+
+	tunnel, err := c.dialThroughTunnel(ctx, "tcp", target)
+	if err != nil {
+		log.Printf("[socks5] tunnel error: %v", err)
+		conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer tunnel.Close()
+
+	// SOCKS5 success reply
+	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+
+	// Bidirectional copy
+	done := make(chan struct{}, 2)
+	go func() {
+		io.Copy(tunnel, conn)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(conn, tunnel)
+		done <- struct{}{}
+	}()
+	<-done
 }
 
 func (c *Client) dialThroughTunnel(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -232,7 +320,12 @@ func (tc *tunnelConn) Read(p []byte) (int, error) {
 }
 
 func (tc *tunnelConn) Write(p []byte) (int, error) {
-	payload := append(encodeStreamID(tc.streamID), p...)
+	if len(p) == 0 {
+		return 0, nil
+	}
+	payload := make([]byte, 4+len(p))
+	copy(payload[:4], encodeStreamID(tc.streamID))
+	copy(payload[4:], p)
 	frame := protocol.NewDataFrame(payload)
 
 	obfuscation.Sleep(tc.client.config.Timing)

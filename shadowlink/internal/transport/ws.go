@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -90,7 +91,7 @@ func DialWS(ctx context.Context, serverAddr, wsPath, sni string, useTLS bool, in
 		scheme = "wss"
 	}
 
-	url := fmt.Sprintf("%s://%s%s", scheme, serverAddr, wsPath)
+	wsURL := fmt.Sprintf("%s://%s%s", scheme, serverAddr, wsPath)
 
 	var dialer *websocket.Dialer
 	if useTLS {
@@ -110,18 +111,30 @@ func DialWS(ctx context.Context, serverAddr, wsPath, sni string, useTLS bool, in
 				return tlsConn, nil
 			},
 		}
-		// Override scheme so websocket lib doesn't try its own TLS
-		url = fmt.Sprintf("ws://%s%s", serverAddr, wsPath)
+		wsURL = fmt.Sprintf("ws://%s%s", serverAddr, wsPath)
 	} else {
-		dialer = websocket.DefaultDialer
+		dialer = &websocket.Dialer{
+			HandshakeTimeout: 10 * time.Second,
+		}
 	}
 
 	headers := http.Header{}
 	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	headers.Set("Origin", fmt.Sprintf("https://%s", sni))
+	if sni != "" {
+		headers.Set("Origin", fmt.Sprintf("https://%s", sni))
+	}
 	headers.Set("Accept-Language", "en-US,en;q=0.9")
 
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	var conn *websocket.Conn
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		conn, _, err = dialer.DialContext(ctx, wsURL, headers)
+		if err == nil {
+			break
+		}
+		log.Printf("[transport] websocket dial attempt %d failed: %v", attempt+1, err)
+		time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial failed: %w", err)
 	}

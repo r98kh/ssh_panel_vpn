@@ -32,6 +32,7 @@ type SessionCipher struct {
 	recvNonce  atomic.Uint64
 	suite      CipherSuite
 	mu         sync.Mutex
+	WriteMu    sync.Mutex // Serializes encrypt+write to preserve nonce ordering
 }
 
 func NewSessionCipher(key []byte, suite CipherSuite) (*SessionCipher, error) {

@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -132,6 +131,7 @@ func (sr *ServerRelay) relayLoop(wsConn *transport.WSConn, session *protocol.Ses
 	for {
 		frame, err := protocol.ReadFrameFrom(wsConn, cipher)
 		if err != nil {
+			log.Printf("[server] relay read error (session %s): %v", session.ID, err)
 			return
 		}
 
@@ -171,7 +171,7 @@ func (sr *ServerRelay) handleControlFrame(wsConn *transport.WSConn, session *pro
 
 	conn, err := net.DialTimeout(network, addr, 10*time.Second)
 	if err != nil {
-		log.Printf("[server] failed to connect to %s: %v", addr, err)
+		log.Printf("[server] connect failed %s: %v", addr, err)
 		return
 	}
 
@@ -210,7 +210,9 @@ func (sr *ServerRelay) relayUpstream(wsConn *transport.WSConn, cipher *protocol.
 	for {
 		n, err := upstream.Read(buf)
 		if n > 0 {
-			payload := append(encodeStreamID(streamID), buf[:n]...)
+			payload := make([]byte, 4+n)
+			copy(payload[:4], encodeStreamID(streamID))
+			copy(payload[4:], buf[:n])
 			frame := protocol.NewDataFrame(payload)
 
 			obfuscation.Sleep(sr.timingCfg)
@@ -219,9 +221,6 @@ func (sr *ServerRelay) relayUpstream(wsConn *transport.WSConn, cipher *protocol.
 			}
 		}
 		if err != nil {
-			if err != io.EOF {
-				log.Printf("[server] upstream read error (stream %d): %v", streamID, err)
-			}
 			return
 		}
 	}

@@ -105,7 +105,12 @@ func ReadFrameFrom(r io.Reader, cipher *SessionCipher) (*Frame, error) {
 }
 
 // WriteFrameTo writes a length-prefixed encrypted frame to a writer.
+// It holds the cipher's write lock to prevent nonce ordering issues
+// when multiple goroutines write concurrently.
 func WriteFrameTo(w io.Writer, f *Frame, cipher *SessionCipher, minPad, maxPad int) error {
+	cipher.WriteMu.Lock()
+	defer cipher.WriteMu.Unlock()
+
 	data, err := EncodeFrame(f, cipher, minPad, maxPad)
 	if err != nil {
 		return err

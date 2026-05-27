@@ -67,14 +67,15 @@ func main() {
 	}
 	log.Println("[shadowlink] connected successfully")
 
-	go func() {
-		if err := client.RunSOCKS5(ctx); err != nil {
-			log.Fatalf("SOCKS5 proxy error: %v", err)
-		}
-	}()
-
 	log.Printf("[shadowlink] SOCKS5 proxy listening on %s", cfg.Client.ListenAddr)
 	log.Println("[shadowlink] configure your browser/system to use SOCKS5 proxy at", cfg.Client.ListenAddr)
+
+	go func() {
+		if err := client.RunSOCKS5(ctx); err != nil {
+			log.Printf("SOCKS5 proxy error: %v", err)
+			cancel()
+		}
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

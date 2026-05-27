@@ -56,6 +56,53 @@ class ServerListView(generics.ListCreateAPIView):
             return ServerCreateSerializer
         return ServerSerializer
 
+    def perform_create(self, serializer):
+        server = serializer.save(protocol_type="ssh", status=Server.Status.ACTIVE)
+        self._provision_default_user(server)
+
+    def _provision_default_user(self, server):
+        """Create a default SSH test user on the newly added server."""
+        from datetime import timedelta
+        from accounts.models import SSHAccount, generate_password
+        from plans.models import Plan
+        from servers.ssh import get_ssh_manager
+
+        username = "default_user"
+        password = generate_password()
+        days = 30
+        expire_date = timezone.now() + timedelta(days=days)
+
+        plan = Plan.objects.filter(is_active=True).order_by("duration_days").first()
+        if not plan:
+            return
+
+        try:
+            with get_ssh_manager(server) as ssh:
+                if not ssh.user_exists(username):
+                    result = ssh.create_user(username, password)
+                    if not result.ok:
+                        logger.warning("Default user creation failed on %s: %s", server, result.stderr)
+                        return
+                ssh.set_expiry(username, expire_date.strftime("%Y-%m-%d"))
+                ssh.set_max_logins(username, 1)
+        except Exception as e:
+            logger.warning("SSH provisioning of default user failed on %s: %s", server, e)
+            return
+
+        SSHAccount.objects.create(
+            username=username,
+            password_display=password,
+            server=server,
+            plan=plan,
+            protocol_type="ssh",
+            status=SSHAccount.Status.ACTIVE,
+            expire_date=expire_date,
+            max_connections=1,
+            bandwidth_limit_gb=0,
+            note="Auto-created default user.",
+        )
+        logger.info("Default user '%s' created on server %s", username, server)
+
 
 class ServerDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Server.objects.all()

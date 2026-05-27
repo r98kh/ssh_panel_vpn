@@ -5,7 +5,6 @@ go 1.22
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/refraction-networking/utls v1.6.7
-	github.com/things-go/go-socks5 v0.1.1
 	golang.org/x/crypto v0.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
